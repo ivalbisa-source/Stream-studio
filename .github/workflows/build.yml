@@ -21,18 +21,25 @@ jobs:
 
     - name: Setup Project Structure & Clean Gradle Files
       run: |
-        # 1. Pastikan folder lengkap
+        # Buat susunan folder resmi
         mkdir -p app/src/main/java/com/stream/studio
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
 
-        # 2. Pindahkan source code, layout, dan resource
+        # Pindahkan file ke lokasi modul app
         mv -f AndroidManifest.xml app/src/main/ 2>/dev/null || true
         mv -f *.kt *.java app/src/main/java/com/stream/studio/ 2>/dev/null || true
         mv -f *activity*.xml app/src/main/res/layout/ 2>/dev/null || true
         mv -f themes.xml strings.xml colors.xml app/src/main/res/values/ 2>/dev/null || true
 
-        # 3. Buat settings.gradle bersih
+        # Pastikan baris pertama file Kotlin/Java memiliki deklarasi package yang cocok
+        for f in app/src/main/java/com/stream/studio/*.kt app/src/main/java/com/stream/studio/*.java; do
+          if [ -f "$f" ]; then
+            sed -i 's/^package .*/package com.stream.studio/' "$f"
+          fi
+        done
+
+        # 1. settings.gradle
         cat << 'EOF' > settings.gradle
         pluginManagement {
             repositories {
@@ -52,7 +59,7 @@ jobs:
         include ':app'
         EOF
 
-        # 4. Buat build.gradle tingkat root
+        # 2. build.gradle tingkat root
         cat << 'EOF' > build.gradle
         buildscript {
             repositories {
@@ -66,14 +73,14 @@ jobs:
         }
         EOF
 
-        # 5. Buat gradle.properties agar build stabil
+        # 3. gradle.properties
         cat << 'EOF' > gradle.properties
         org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
         android.useAndroidX=true
         android.nonTransitiveRClass=true
         EOF
 
-        # 6. Buat app/build.gradle yang kompatibel penuh
+        # 4. app/build.gradle
         cat << 'EOF' > app/build.gradle
         plugins {
             id 'com.android.application'
@@ -95,7 +102,6 @@ jobs:
             buildTypes {
                 release {
                     minifyEnabled false
-                    proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
                 }
             }
             compileOptions {
@@ -119,11 +125,12 @@ jobs:
       uses: gradle/actions/setup-gradle@v3
       with:
         gradle-version: '8.4'
+        cache-disabled: true
 
     - name: Build Android APK
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
-      run: gradle :app:assembleDebug
+      run: gradle :app:assembleDebug --no-daemon --info
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
