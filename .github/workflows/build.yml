@@ -55,4 +55,3 @@ jobs:
       with:
         name: StreamStudio-App
         path: "**/build/outputs/apk/debug/*.apk"
-        
