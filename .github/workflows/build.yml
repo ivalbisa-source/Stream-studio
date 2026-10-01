@@ -25,7 +25,7 @@ jobs:
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
 
-        # Buat settings.gradle standar
+        # 1. settings.gradle resmi & bersih
         cat << 'EOF' > settings.gradle
         pluginManagement {
             repositories {
@@ -35,7 +35,7 @@ jobs:
             }
         }
         dependencyResolutionManagement {
-            repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+            repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
             repositories {
                 google()
                 mavenCentral()
@@ -45,7 +45,7 @@ jobs:
         include ':app'
         EOF
 
-        # Buat build.gradle root standar
+        # 2. build.gradle tingkat root resmi (tanpa blok allprojects agar tidak bentrok)
         cat << 'EOF' > build.gradle
         buildscript {
             repositories {
@@ -57,15 +57,9 @@ jobs:
                 classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.0'
             }
         }
-        allprojects {
-            repositories {
-                google()
-                mavenCentral()
-            }
-        }
         EOF
 
-        # Pindahkan modul build.gradle ke folder app/
+        # 3. Pindahkan build.gradle modul ke dalam folder app/ jika masih tercecer
         if [ ! -f "app/build.gradle" ]; then
           for f in $(grep -l "com.android.application" *.gradle 2>/dev/null); do
             mv "$f" app/build.gradle
@@ -73,7 +67,7 @@ jobs:
           done
         fi
 
-        # Pindahkan file resource dan kode ke tempat semestinya
+        # 4. Pindahkan berkas kode dan resource ke posisi yang benar
         mv -f AndroidManifest.xml app/src/main/ 2>/dev/null || true
         mv -f *.kt *.java app/src/main/java/com/stream/studio/ 2>/dev/null || true
         mv -f *activity*.xml app/src/main/res/layout/ 2>/dev/null || true
@@ -94,4 +88,3 @@ jobs:
       with:
         name: StreamStudio-App
         path: "app/build/outputs/apk/debug/*.apk"
-        
