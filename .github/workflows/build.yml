@@ -19,13 +19,20 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Fix Project and Folder Structure
+    - name: Setup Project Structure & Clean Gradle Files
       run: |
+        # 1. Pastikan folder lengkap
         mkdir -p app/src/main/java/com/stream/studio
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
 
-        # 1. settings.gradle resmi & bersih
+        # 2. Pindahkan source code, layout, dan resource
+        mv -f AndroidManifest.xml app/src/main/ 2>/dev/null || true
+        mv -f *.kt *.java app/src/main/java/com/stream/studio/ 2>/dev/null || true
+        mv -f *activity*.xml app/src/main/res/layout/ 2>/dev/null || true
+        mv -f themes.xml strings.xml colors.xml app/src/main/res/values/ 2>/dev/null || true
+
+        # 3. Buat settings.gradle bersih
         cat << 'EOF' > settings.gradle
         pluginManagement {
             repositories {
@@ -45,7 +52,7 @@ jobs:
         include ':app'
         EOF
 
-        # 2. build.gradle tingkat root resmi (tanpa blok allprojects agar tidak bentrok)
+        # 4. Buat build.gradle tingkat root
         cat << 'EOF' > build.gradle
         buildscript {
             repositories {
@@ -59,19 +66,54 @@ jobs:
         }
         EOF
 
-        # 3. Pindahkan build.gradle modul ke dalam folder app/ jika masih tercecer
-        if [ ! -f "app/build.gradle" ]; then
-          for f in $(grep -l "com.android.application" *.gradle 2>/dev/null); do
-            mv "$f" app/build.gradle
-            break
-          done
-        fi
+        # 5. Buat gradle.properties agar build stabil
+        cat << 'EOF' > gradle.properties
+        org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+        android.useAndroidX=true
+        android.nonTransitiveRClass=true
+        EOF
 
-        # 4. Pindahkan berkas kode dan resource ke posisi yang benar
-        mv -f AndroidManifest.xml app/src/main/ 2>/dev/null || true
-        mv -f *.kt *.java app/src/main/java/com/stream/studio/ 2>/dev/null || true
-        mv -f *activity*.xml app/src/main/res/layout/ 2>/dev/null || true
-        mv -f themes.xml strings.xml colors.xml app/src/main/res/values/ 2>/dev/null || true
+        # 6. Buat app/build.gradle yang kompatibel penuh
+        cat << 'EOF' > app/build.gradle
+        plugins {
+            id 'com.android.application'
+            id 'org.jetbrains.kotlin.android'
+        }
+
+        android {
+            namespace 'com.stream.studio'
+            compileSdk 34
+
+            defaultConfig {
+                applicationId "com.stream.studio"
+                minSdk 24
+                targetSdk 34
+                versionCode 1
+                versionName "1.0"
+            }
+
+            buildTypes {
+                release {
+                    minifyEnabled false
+                    proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                }
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_17
+                targetCompatibility JavaVersion.VERSION_17
+            }
+            kotlinOptions {
+                jvmTarget = '17'
+            }
+        }
+
+        dependencies {
+            implementation 'androidx.core:core-ktx:1.12.0'
+            implementation 'androidx.appcompat:appcompat:1.6.1'
+            implementation 'com.google.android.material:material:1.11.0'
+            implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+        }
+        EOF
 
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
@@ -81,10 +123,11 @@ jobs:
     - name: Build Android APK
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
-      run: gradle :app:assembleDebug --stacktrace
+      run: gradle :app:assembleDebug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: StreamStudio-App
         path: "app/build/outputs/apk/debug/*.apk"
+        
