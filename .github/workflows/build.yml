@@ -19,20 +19,17 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Project Files & Complete Native Android Implementation
+    - name: Setup Fast Native Android Implementation
       run: |
-        # 1. Folder structure
         mkdir -p app/src/main/java/com/stream/studio
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
         mkdir -p app/src/main/res/xml
         mkdir -p app/src/main/assets
 
-        # Pindahkan aset web jika ada di luar
         mv -f index.html app/src/main/assets/ 2>/dev/null || true
         mv -f *.html *.js *.css app/src/main/assets/ 2>/dev/null || true
 
-        # 2. FileProvider config
         cat << 'EOF' > app/src/main/res/xml/file_paths.xml
         <?xml version="1.0" encoding="utf-8"?>
         <paths xmlns:android="http://schemas.android.com/apk/res/android">
@@ -41,7 +38,7 @@ jobs:
         </paths>
         EOF
 
-        # 3. AndroidManifest.xml lengkap
+        # Manifest dengan Hardware Acceleration aktif agar video instan
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -60,6 +57,8 @@ jobs:
 
             <application
                 android:allowBackup="true"
+                android:hardwareAccelerated="true"
+                android:largeHeap="true"
                 android:icon="@android:drawable/sym_def_app_icon"
                 android:label="StreamStudio"
                 android:roundIcon="@android:drawable/sym_def_app_icon"
@@ -69,7 +68,8 @@ jobs:
                 <activity
                     android:name=".MainActivity"
                     android:exported="true"
-                    android:configChanges="orientation|screenSize">
+                    android:hardwareAccelerated="true"
+                    android:configChanges="orientation|screenSize|keyboardHidden">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
                         <category android:name="android.intent.category.LAUNCHER" />
@@ -90,7 +90,7 @@ jobs:
         </manifest>
         EOF
 
-        # 4. MainActivity.kt (Dukungan Galeri, MediaProjection Dialog, & Share TikTok Native)
+        # MainActivity dengan Fullscreen ChromeClient & Akselerasi GPU
         cat << 'EOF' > app/src/main/java/com/stream/studio/MainActivity.kt
         package com.stream.studio
 
@@ -100,18 +100,26 @@ jobs:
         import android.media.projection.MediaProjectionManager
         import android.net.Uri
         import android.os.Bundle
+        import android.view.View
+        import android.view.ViewGroup
+        import android.view.WindowManager
         import android.webkit.JavascriptInterface
         import android.webkit.ValueCallback
         import android.webkit.WebChromeClient
         import android.webkit.WebSettings
         import android.webkit.WebView
         import android.webkit.WebViewClient
+        import android.widget.FrameLayout
         import android.widget.Toast
         import androidx.appcompat.app.AppCompatActivity
 
         class MainActivity : AppCompatActivity() {
 
             private lateinit var webView: WebView
+            private var customView: View? = null
+            private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+            private lateinit var fullscreenContainer: FrameLayout
+
             private var filePathCallback: ValueCallback<Array<Uri>>? = null
             private val REQUEST_SCREEN_CAPTURE = 1001
             private val REQUEST_FILE_CHOOSER = 1002
@@ -119,8 +127,20 @@ jobs:
             override fun onCreate(savedInstanceState: Bundle?) {
                 super.onCreate(savedInstanceState)
 
+                window.setFlags(
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+                )
+
+                val rootLayout = FrameLayout(this)
                 webView = WebView(this)
-                setContentView(webView)
+                fullscreenContainer = FrameLayout(this).apply {
+                    visibility = View.GONE
+                }
+
+                rootLayout.addView(webView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                rootLayout.addView(fullscreenContainer, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                setContentView(rootLayout)
 
                 val settings: WebSettings = webView.settings
                 settings.javaScriptEnabled = true
@@ -128,10 +148,12 @@ jobs:
                 settings.allowFileAccess = true
                 settings.allowContentAccess = true
                 settings.mediaPlaybackRequiresUserGesture = false
+                settings.setRenderPriority(WebSettings.RenderPriority.HIGH)
+                settings.cacheMode = WebSettings.LOAD_NO_CACHE
 
+                webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
                 webView.webViewClient = WebViewClient()
 
-                // WebChromeClient untuk membuka Galeri Android secara otomatis
                 webView.webChromeClient = object : WebChromeClient() {
                     override fun onShowFileChooser(
                         view: WebView?,
@@ -153,9 +175,29 @@ jobs:
                         }
                         return true
                     }
+
+                    override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                        if (customView != null) {
+                            onHideCustomView()
+                            return
+                        }
+                        customView = view
+                        customViewCallback = callback
+                        fullscreenContainer.addView(view)
+                        fullscreenContainer.visibility = View.VISIBLE
+                        webView.visibility = View.GONE
+                    }
+
+                    override fun onHideCustomView() {
+                        if (customView == null) return
+                        fullscreenContainer.visibility = View.GONE
+                        fullscreenContainer.removeView(customView)
+                        customView = null
+                        customViewCallback?.onCustomViewHidden()
+                        webView.visibility = View.VISIBLE
+                    }
                 }
 
-                // Bridge untuk JavaScript di index.html
                 val bridge = WebAppInterface(this)
                 webView.addJavascriptInterface(bridge, "AndroidBridge")
                 webView.addJavascriptInterface(bridge, "AndroidApp")
@@ -169,24 +211,18 @@ jobs:
             }
 
             fun shareToTikTokDirectly() {
-                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                val intent = Intent(Intent.ACTION_SEND).apply {
                     type = "video/*"
-                    `package` = "com.zhiliaoapp.musically"
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
-                try {
-                    startActivity(shareIntent)
-                } catch (e: Exception) {
-                    val fallback = Intent(Intent.ACTION_SEND).apply {
-                        type = "video/*"
-                    }
-                    startActivity(Intent.createChooser(fallback, "Bagikan ke TikTok"))
-                }
+                val chooser = Intent.createChooser(intent, "Bagikan ke TikTok")
+                chooser.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                startActivity(chooser)
             }
 
             override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
                 super.onActivityResult(requestCode, resultCode, data)
 
-                // Respons Dialog MediaProjection
                 if (requestCode == REQUEST_SCREEN_CAPTURE) {
                     if (resultCode == Activity.RESULT_OK) {
                         Toast.makeText(this, "Transmisi Virtual Diaktifkan!", Toast.LENGTH_SHORT).show()
@@ -195,7 +231,6 @@ jobs:
                     }
                 }
 
-                // Respons Pemilihan File Galeri
                 if (requestCode == REQUEST_FILE_CHOOSER) {
                     val resultUri = if (resultCode == Activity.RESULT_OK && data != null) {
                         data.data?.let { arrayOf(it) }
@@ -210,22 +245,28 @@ jobs:
             inner class WebAppInterface(private val activity: MainActivity) {
                 @JavascriptInterface
                 fun startCapture() {
-                    activity.runOnUiThread {
-                        activity.requestScreenCapture()
-                    }
+                    activity.runOnUiThread { activity.requestScreenCapture() }
                 }
 
                 @JavascriptInterface
                 fun shareVideo() {
+                    activity.runOnUiThread { activity.shareToTikTokDirectly() }
+                }
+
+                @JavascriptInterface
+                fun triggerFullscreen() {
                     activity.runOnUiThread {
-                        activity.shareToTikTokDirectly()
+                        val decorView = activity.window.decorView
+                        val uiOptions = (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION)
+                        decorView.systemUiVisibility = uiOptions
                     }
                 }
             }
         }
         EOF
 
-        # 5. Konfigurasi Gradle
         cat << 'EOF' > settings.gradle
         pluginManagement {
             repositories {
@@ -278,8 +319,8 @@ jobs:
                 applicationId "com.stream.studio"
                 minSdk 24
                 targetSdk 34
-                versionCode 4
-                versionName "1.0.3"
+                versionCode 5
+                versionName "1.0.4"
             }
 
             buildTypes {
