@@ -1,4 +1,4 @@
-name: Build Virtual Camera APK
+name: Build Android APK
 
 on:
   push:
@@ -19,250 +19,259 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Virtual Camera Native Hook Engine
+    - name: Setup Stable Stream Studio App
       run: |
         mkdir -p app/src/main/java/com/stream/studio
-        mkdir -p app/src/main/assets
+        mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
+        mkdir -p app/src/main/res/xml
+        mkdir -p app/src/main/assets
 
-        # 1. Strings Resource
-        cat << 'EOF' > app/src/main/res/values/strings.xml
-        <resources>
-            <string name="app_name">Stream Studio VCam</string>
-        </resources>
+        mv -f index.html app/src/main/assets/ 2>/dev/null || true
+        mv -f *.html *.js *.css app/src/main/assets/ 2>/dev/null || true
+
+        cat << 'EOF' > app/src/main/res/xml/file_paths.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <paths xmlns:android="http://schemas.android.com/apk/res/android">
+            <external-path name="external_files" path="."/>
+            <cache-path name="cache_files" path="."/>
+        </paths>
         EOF
 
-        # 2. Xposed Scope Config
-        cat << 'EOF' > app/src/main/assets/xposed_init
-        com.stream.studio.HookMain
-        EOF
-
-        # 3. AndroidManifest sebagai Modul Kamera Sistem
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+            <uses-permission android:name="android.permission.INTERNET" />
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
             <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+            <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
             <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+
+            <queries>
+                <package android:name="com.zhiliaoapp.musically" />
+                <package android:name="com.ss.android.ugc.trill" />
+            </queries>
 
             <application
                 android:allowBackup="true"
-                android:label="@string/app_name"
-                android:icon="@android:drawable/ic_menu_camera"
-                android:supportsRtl="true">
-
-                <meta-data
-                    android:name="xposedmodule"
-                    android:value="true" />
-                <meta-data
-                    android:name="xposeddescription"
-                    android:value="Virtual Camera Video Hook for TikTok Live" />
-                <meta-data
-                    android:name="xposedminversion"
-                    android:value="89" />
-                <meta-data
-                    android:name="xposedscope"
-                    android:resource="@array/xposedscope" />
-
+                android:hardwareAccelerated="true"
+                android:largeHeap="true"
+                android:icon="@android:drawable/sym_def_app_icon"
+                android:label="Stream Studio"
+                android:roundIcon="@android:drawable/sym_def_app_icon"
+                android:supportsRtl="true"
+                android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+                
                 <activity
                     android:name=".MainActivity"
-                    android:exported="true">
+                    android:exported="true"
+                    android:hardwareAccelerated="true"
+                    android:configChanges="orientation|screenSize|keyboardHidden">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
                         <category android:name="android.intent.category.LAUNCHER" />
                     </intent-filter>
                 </activity>
+
+                <provider
+                    android:name="androidx.core.content.FileProvider"
+                    android:authorities="com.stream.studio.fileprovider"
+                    android:exported="false"
+                    android:grantUriPermissions="true">
+                    <meta-data
+                        android:name="android.support.FILE_PROVIDER_PATHS"
+                        android:resource="@xml/file_paths" />
+                </provider>
+
             </application>
         </manifest>
         EOF
 
-        # Array Target Scope (TikTok & TikTok Lite)
-        cat << 'EOF' > app/src/main/res/values/arrays.xml
-        <?xml version="1.0" encoding="utf-8"?>
-        <resources>
-            <string-array name="xposedscope">
-                <item>com.zhiliaoapp.musically</item>
-                <item>com.ss.android.ugc.trill</item>
-            </string-array>
-        </resources>
-        EOF
-
-        # 4. Engine Camera Hooking (HookMain.kt)
-        cat << 'EOF' > app/src/main/java/com/stream/studio/HookMain.kt
-        package com.stream.studio
-
-        import android.graphics.SurfaceTexture
-        import android.hardware.Camera
-        import android.media.MediaPlayer
-        import android.os.Environment
-        import android.view.Surface
-        import de.robv.android.xposed.IXposedHookLoadPackage
-        import de.robv.android.xposed.XC_MethodHook
-        import de.robv.android.xposed.XposedBridge
-        import de.robv.android.xposed.XposedHelpers
-        import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
-        import java.io.File
-
-        class HookMain : IXposedHookLoadPackage {
-            private var mediaPlayer: MediaPlayer? = null
-            private val videoPath = File(Environment.getExternalStorageDirectory(), "DCIM/Camera1/virtual.mp4")
-
-            override fun handleLoadPackage(lpparam: LoadPackageParam) {
-                if (lpparam.packageName != "com.zhiliaoapp.musically" && 
-                    lpparam.packageName != "com.ss.android.ugc.trill") return
-
-                XposedBridge.log("VCam StreamStudio active on: " + lpparam.packageName)
-
-                // Hook Legacy Camera Preview
-                XposedHelpers.findAndHookMethod(
-                    "android.hardware.Camera",
-                    lpparam.classLoader,
-                    "setPreviewTexture",
-                    SurfaceTexture::class.java,
-                    object : XC_MethodHook() {
-                        override fun beforeHookedMethod(param: MethodHookParam) {
-                            val st = param.args[0] as? SurfaceTexture ?: return
-                            startPlayback(Surface(st))
-                            param.result = null
-                        }
-                    }
-                )
-
-                // Hook Camera2 Session Surface
-                XposedHelpers.findAndHookMethod(
-                    "android.hardware.camera2.CaptureRequest.Builder",
-                    lpparam.classLoader,
-                    "addTarget",
-                    Surface::class.java,
-                    object : XC_MethodHook() {
-                        override fun beforeHookedMethod(param: MethodHookParam) {
-                            val surface = param.args[0] as? Surface ?: return
-                            startPlayback(surface)
-                        }
-                    }
-                )
-            }
-
-            private fun startPlayback(surface: Surface) {
-                try {
-                    if (!videoPath.exists()) {
-                        XposedBridge.log("File virtual.mp4 tidak ditemukan di DCIM/Camera1/")
-                        return
-                    }
-                    mediaPlayer?.release()
-                    mediaPlayer = MediaPlayer().apply {
-                        setSurface(surface)
-                        setDataSource(videoPath.absolutePath)
-                        isLooping = true
-                        prepare()
-                        start()
-                    }
-                } catch (e: Exception) {
-                    XposedBridge.log("Error VCam Playback: " + e.message)
-                }
-            }
-        }
-        EOF
-
-        # 5. UI Pemilih Video & Penyiap Folder (MainActivity.kt)
         cat << 'EOF' > app/src/main/java/com/stream/studio/MainActivity.kt
         package com.stream.studio
 
         import android.app.Activity
+        import android.content.Context
         import android.content.Intent
+        import android.media.projection.MediaProjectionManager
         import android.net.Uri
         import android.os.Bundle
-        import android.os.Environment
-        import android.widget.Button
-        import android.widget.TextView
+        import android.view.View
+        import android.view.ViewGroup
+        import android.view.WindowManager
+        import android.webkit.JavascriptInterface
+        import android.webkit.ValueCallback
+        import android.webkit.WebChromeClient
+        import android.webkit.WebSettings
+        import android.webkit.WebView
+        import android.webkit.WebViewClient
+        import android.widget.FrameLayout
         import android.widget.Toast
         import androidx.appcompat.app.AppCompatActivity
-        import java.io.File
-        import java.io.FileOutputStream
 
         class MainActivity : AppCompatActivity() {
 
-            private lateinit var statusText: TextView
-            private val REQUEST_VIDEO = 2001
-            private val targetDir = File(Environment.getExternalStorageDirectory(), "DCIM/Camera1")
+            private lateinit var webView: WebView
+            private var customView: View? = null
+            private var customViewCallback: WebChromeClient.CustomViewCallback? = null
+            private lateinit var fullscreenContainer: FrameLayout
+
+            private var filePathCallback: ValueCallback<Array<Uri>>? = null
+            private val REQUEST_SCREEN_CAPTURE = 1001
+            private val REQUEST_FILE_CHOOSER = 1002
 
             override fun onCreate(savedInstanceState: Bundle?) {
                 super.onCreate(savedInstanceState)
 
-                val layout = android.widget.LinearLayout(this).apply {
-                    orientation = android.widget.LinearLayout.VERTICAL
-                    setPadding(50, 100, 50, 50)
+                window.setFlags(
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,
+                    WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED
+                )
+
+                val rootLayout = FrameLayout(this)
+                webView = WebView(this)
+                fullscreenContainer = FrameLayout(this).apply {
+                    visibility = View.GONE
                 }
 
-                val title = TextView(this).apply {
-                    text = "Stream Studio VCam Hook"
-                    textSize = 22f
-                    setTypeface(null, android.graphics.Typeface.BOLD)
-                }
+                rootLayout.addView(webView, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                rootLayout.addView(fullscreenContainer, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                setContentView(rootLayout)
 
-                statusText = TextView(this).apply {
-                    text = "Status: Pastikan video ditaruh di DCIM/Camera1/virtual.mp4"
-                    setPadding(0, 30, 0, 30)
-                }
+                val settings: WebSettings = webView.settings
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.allowFileAccess = true
+                settings.allowContentAccess = true
+                settings.mediaPlaybackRequiresUserGesture = false
+                settings.setRenderPriority(WebSettings.RenderPriority.HIGH)
+                settings.cacheMode = WebSettings.LOAD_NO_CACHE
 
-                val btnChoose = Button(this).apply {
-                    text = "PILIH VIDEO UNTUK KAMERA TIKTOK"
-                    setOnClickListener {
+                webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                webView.webViewClient = WebViewClient()
+
+                webView.webChromeClient = object : WebChromeClient() {
+                    override fun onShowFileChooser(
+                        view: WebView?,
+                        filePathCallback: ValueCallback<Array<Uri>>?,
+                        fileChooserParams: FileChooserParams?
+                    ): Boolean {
+                        this@MainActivity.filePathCallback?.onReceiveValue(null)
+                        this@MainActivity.filePathCallback = filePathCallback
+
                         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-                            type = "video/*"
+                            type = "*/*"
+                            addCategory(Intent.CATEGORY_OPENABLE)
                         }
-                        startActivityForResult(intent, REQUEST_VIDEO)
+                        try {
+                            startActivityForResult(Intent.createChooser(intent, "Pilih Media"), REQUEST_FILE_CHOOSER)
+                        } catch (e: Exception) {
+                            this@MainActivity.filePathCallback = null
+                            return false
+                        }
+                        return true
+                    }
+
+                    override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
+                        if (customView != null) {
+                            onHideCustomView()
+                            return
+                        }
+                        customView = view
+                        customViewCallback = callback
+                        fullscreenContainer.addView(view)
+                        fullscreenContainer.visibility = View.VISIBLE
+                        webView.visibility = View.GONE
+                    }
+
+                    override fun onHideCustomView() {
+                        if (customView == null) return
+                        fullscreenContainer.visibility = View.GONE
+                        fullscreenContainer.removeView(customView)
+                        customView = null
+                        customViewCallback?.onCustomViewHidden()
+                        webView.visibility = View.VISIBLE
                     }
                 }
 
-                val btnLaunch = Button(this).apply {
-                    text = "BUKA TIKTOK LIVE"
-                    setOnClickListener {
-                        val pkg = "com.zhiliaoapp.musically"
-                        val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
-                        if (launchIntent != null) {
-                            startActivity(launchIntent)
-                        } else {
-                            Toast.makeText(this@MainActivity, "TikTok belum terpasang", Toast.LENGTH_SHORT).show()
-                        }
+                val bridge = WebAppInterface(this)
+                webView.addJavascriptInterface(bridge, "AndroidBridge")
+                webView.addJavascriptInterface(bridge, "AndroidApp")
+
+                webView.loadUrl("file:///android_asset/index.html")
+            }
+
+            fun requestScreenCapture() {
+                val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                startActivityForResult(projectionManager.createScreenCaptureIntent(), REQUEST_SCREEN_CAPTURE)
+            }
+
+            fun launchTikTokInstantly() {
+                val tiktokPackages = listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill")
+                var launched = false
+                for (pkg in tiktokPackages) {
+                    val intent = packageManager.getLaunchIntentForPackage(pkg)
+                    if (intent != null) {
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                        startActivity(intent)
+                        launched = true
+                        break
                     }
                 }
-
-                layout.addView(title)
-                layout.addView(statusText)
-                layout.addView(btnChoose)
-                layout.addView(btnLaunch)
-                setContentView(layout)
-
-                if (!targetDir.exists()) targetDir.mkdirs()
+                if (!launched) {
+                    Toast.makeText(this, "Aplikasi TikTok tidak ditemukan", Toast.LENGTH_SHORT).show()
+                }
             }
 
             override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
                 super.onActivityResult(requestCode, resultCode, data)
-                if (requestCode == REQUEST_VIDEO && resultCode == Activity.RESULT_OK) {
-                    val uri = data?.data ?: return
-                    copyVideoToVirtual(uri)
+
+                if (requestCode == REQUEST_SCREEN_CAPTURE) {
+                    if (resultCode == Activity.RESULT_OK) {
+                        Toast.makeText(this, "Transmisi Virtual Diaktifkan!", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this, "Izin transmisi dibatalkan", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                if (requestCode == REQUEST_FILE_CHOOSER) {
+                    val resultUri = if (resultCode == Activity.RESULT_OK && data != null) {
+                        data.data?.let { arrayOf(it) }
+                    } else {
+                        null
+                    }
+                    filePathCallback?.onReceiveValue(resultUri)
+                    filePathCallback = null
                 }
             }
 
-            private fun copyVideoToVirtual(uri: Uri) {
-                try {
-                    val destFile = File(targetDir, "virtual.mp4")
-                    contentResolver.openInputStream(uri)?.use { input ->
-                        FileOutputStream(destFile).use { output ->
-                            input.copyTo(output)
-                        }
+            inner class WebAppInterface(private val activity: MainActivity) {
+                @JavascriptInterface
+                fun startCapture() {
+                    activity.runOnUiThread { activity.requestScreenCapture() }
+                }
+
+                @JavascriptInterface
+                fun shareVideo() {
+                    activity.runOnUiThread { activity.launchTikTokInstantly() }
+                }
+
+                @JavascriptInterface
+                fun triggerFullscreen() {
+                    activity.runOnUiThread {
+                        val decorView = activity.window.decorView
+                        val uiOptions = (View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION)
+                        decorView.systemUiVisibility = uiOptions
                     }
-                    statusText.text = "Video Siap: " + destFile.absolutePath
-                    Toast.makeText(this, "Video berhasil dipasang ke Kamera Virtual!", Toast.LENGTH_LONG).show()
-                } catch (e: Exception) {
-                    Toast.makeText(this, "Gagal menyalin video: " + e.message, Toast.LENGTH_SHORT).show()
                 }
             }
         }
         EOF
 
-        # 6. Gradle Files dengan Dependensi Xposed API
         cat << 'EOF' > settings.gradle
         pluginManagement {
             repositories {
@@ -276,7 +285,6 @@ jobs:
             repositories {
                 google()
                 mavenCentral()
-                maven { url 'https://api.xposed.info/' }
             }
         }
         rootProject.name = "StreamStudio"
@@ -316,8 +324,8 @@ jobs:
                 applicationId "com.stream.studio"
                 minSdk 24
                 targetSdk 34
-                versionCode 7
-                versionName "1.0.6"
+                versionCode 8
+                versionName "1.0.7"
             }
 
             buildTypes {
@@ -337,7 +345,7 @@ jobs:
         dependencies {
             implementation 'androidx.core:core-ktx:1.12.0'
             implementation 'androidx.appcompat:appcompat:1.6.1'
-            compileOnly 'de.robv.android.xposed:api:82'
+            implementation 'com.google.android.material:material:1.11.0'
         }
         EOF
 
@@ -355,5 +363,6 @@ jobs:
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: StreamStudio-VCam-App
+        name: StreamStudio-App
         path: "app/build/outputs/apk/debug/*.apk"
+        
