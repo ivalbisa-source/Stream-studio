@@ -19,16 +19,13 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Set up Android SDK
-      uses: android-actions/setup-android@v3
-
     - name: Fix Project and Folder Structure
       run: |
         mkdir -p app/src/main/java/com/stream/studio
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
 
-        # Buat settings.gradle jika belum ada
+        # Buat settings.gradle standar
         cat << 'EOF' > settings.gradle
         pluginManagement {
             repositories {
@@ -48,7 +45,7 @@ jobs:
         include ':app'
         EOF
 
-        # Buat build.gradle tingkat root
+        # Buat build.gradle root standar
         cat << 'EOF' > build.gradle
         buildscript {
             repositories {
@@ -68,7 +65,7 @@ jobs:
         }
         EOF
 
-        # Pastikan build.gradle modul masuk ke folder app/
+        # Pindahkan modul build.gradle ke folder app/
         if [ ! -f "app/build.gradle" ]; then
           for f in $(grep -l "com.android.application" *.gradle 2>/dev/null); do
             mv "$f" app/build.gradle
@@ -76,7 +73,7 @@ jobs:
           done
         fi
 
-        # Pindahkan berkas sumber daya dan kode
+        # Pindahkan file resource dan kode ke tempat semestinya
         mv -f AndroidManifest.xml app/src/main/ 2>/dev/null || true
         mv -f *.kt *.java app/src/main/java/com/stream/studio/ 2>/dev/null || true
         mv -f *activity*.xml app/src/main/res/layout/ 2>/dev/null || true
@@ -88,6 +85,8 @@ jobs:
         gradle-version: '8.4'
 
     - name: Build Android APK
+      env:
+        ANDROID_HOME: /usr/local/lib/android/sdk
       run: gradle :app:assembleDebug --stacktrace
 
     - name: Upload APK
@@ -95,3 +94,4 @@ jobs:
       with:
         name: StreamStudio-App
         path: "app/build/outputs/apk/debug/*.apk"
+        
