@@ -6,19 +6,80 @@
 <title>Stream Studio</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;background:#080a0f;color:#fff;font-family:Arial,sans-serif;padding:14px}
+body{
+  margin:0;
+  background:#080a0f;
+  color:#fff;
+  font-family:Arial,sans-serif;
+  padding:14px;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
 .app{max-width:720px;margin:auto}
 .header{text-align:center;font-size:22px;font-weight:800;margin:4px 0 14px}
 .card{background:#151922;border:1px solid #282e3a;border-radius:18px;padding:12px;margin-bottom:12px}
-.videoBox{position:relative;background:#000;border-radius:14px;overflow:hidden;aspect-ratio:9/16;max-height:68vh;margin:auto;display:flex;align-items:center;justify-content:center}
-video{width:100%;height:100%;object-fit:contain;background:#000}
-.placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#aeb6c5;padding:25px;pointer-events:none}
+.videoBox{
+  position:relative;
+  background:#000;
+  border-radius:14px;
+  overflow:hidden;
+  aspect-ratio:9/16;
+  max-height:68vh;
+  margin:auto;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  touch-action: manipulation;
+}
+video{width:100%;height:100%;object-fit:contain;background:#000;pointer-events:none}
+.placeholder{
+  position:absolute;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  text-align:center;
+  color:#aeb6c5;
+  padding:25px;
+  pointer-events:none;
+}
 .status{position:absolute;top:9px;left:9px;background:#000b;padding:7px 10px;border-radius:9px;font-size:12px;z-index:3;pointer-events:none}
 .controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-button{border:0;border-radius:13px;padding:14px;color:#fff;background:#252b38;font-size:15px;font-weight:800}
-button.active{background:#16a34a}.primary{background:#2563eb}
+button{
+  border:0;
+  border-radius:13px;
+  padding:14px;
+  color:#fff;
+  background:#252b38;
+  font-size:15px;
+  font-weight:800;
+  touch-action: manipulation;
+  cursor: pointer;
+  transition: transform 0.05s ease, background-color 0.1s ease;
+}
+button:active{
+  transform: scale(0.97);
+  opacity: 0.85;
+}
+button.active{background:#16a34a}
+.primary{background:#2563eb}
+.primary:active{background:#1d4ed8}
 .tiktok{background:linear-gradient(135deg,#00f2ea,#111,#ff0050);font-size:16px;grid-column:1/-1}
-.audioPick{display:block;border:2px dashed #394253;border-radius:13px;padding:14px;text-align:center;background:#11151e;color:#d7dce5;cursor:pointer}
+.audioPick{
+  display:block;
+  border:2px dashed #394253;
+  border-radius:13px;
+  padding:14px;
+  text-align:center;
+  background:#11151e;
+  color:#d7dce5;
+  cursor:pointer;
+  touch-action: manipulation;
+}
+.audioPick:active{
+  background:#181e2b;
+}
 .audioName{font-size:13px;color:#b7bfcd;margin-top:9px;word-break:break-word}
 .info{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .infoBox{background:#202531;border-radius:12px;padding:11px;text-align:center}
@@ -31,13 +92,16 @@ input[type=range]{width:100%}.note{font-size:12px;color:#9ca3af;line-height:1.45
 <body>
 <div class="app">
 <div class="header">🎬 Stream Studio</div>
+
+<!-- Input Video Ditaruh di Luar Layar Tapi Tetap Aktif -->
+<input id="file" type="file" accept="video/*" style="position:fixed;top:-1000px;left:-1000px;opacity:0;">
+
 <div class="card">
 <div class="videoBox" id="videoBox">
 <video id="video" playsinline webkit-playsinline preload="metadata"></video>
-<div class="placeholder" id="placeholder">👆 Tekan area video<br>untuk memilih video</div>
+<div class="placeholder" id="placeholder">👆 Tekan area video<br>untuk memilih video dari galeri</div>
 <div class="status" id="status">Belum ada video</div>
 </div>
-<input id="file" type="file" accept="video/*" hidden>
 </div>
 
 <div class="card">
@@ -53,8 +117,8 @@ input[type=range]{width:100%}.note{font-size:12px;color:#9ca3af;line-height:1.45
 </div>
 
 <div class="card">
-<label class="audioPick">🎧 PILIH AUDIO
-<input id="audioFile" type="file" accept="audio/*" hidden>
+<label class="audioPick" id="audioLabel">🎧 PILIH AUDIO
+<input id="audioFile" type="file" accept="audio/*" style="position:fixed;top:-1000px;left:-1000px;opacity:0;">
 </label>
 <div class="audioName" id="audioName">Belum ada audio</div>
 <audio id="audio" preload="metadata"></audio>
@@ -83,67 +147,182 @@ input[type=range]{width:100%}.note{font-size:12px;color:#9ca3af;line-height:1.45
 </div>
 
 <script>
-const file=document.getElementById('file'), video=document.getElementById('video');
-const box=document.getElementById('videoBox'), placeholder=document.getElementById('placeholder');
-const status=document.getElementById('status'), progress=document.getElementById('progress');
-const timeEl=document.getElementById('time'), durationEl=document.getElementById('duration');
-const audioFile=document.getElementById('audioFile'), audio=document.getElementById('audio');
-const audioName=document.getElementById('audioName');
-let videoUrl=null,audioUrl=null,selectedVideo=null,selectedAudio=null;
+const file = document.getElementById('file');
+const video = document.getElementById('video');
+const box = document.getElementById('videoBox');
+const placeholder = document.getElementById('placeholder');
+const status = document.getElementById('status');
+const progress = document.getElementById('progress');
+const timeEl = document.getElementById('time');
+const durationEl = document.getElementById('duration');
+const audioFile = document.getElementById('audioFile');
+const audio = document.getElementById('audio');
+const audioName = document.getElementById('audioName');
+const audioLabel = document.getElementById('audioLabel');
 
-function fmt(sec){if(!isFinite(sec))return'00:00';sec=Math.max(0,Math.floor(sec));
-const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;
-return h?String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'):
-String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');}
-function chooseVideo(){file.click()}
-box.addEventListener('click',e=>{if(e.target===video&&selectedVideo)return;chooseVideo()});
-file.addEventListener('change',()=>{const f=file.files[0];if(!f)return;selectedVideo=f;
-if(videoUrl)URL.revokeObjectURL(videoUrl);videoUrl=URL.createObjectURL(f);video.src=videoUrl;video.load();
-placeholder.style.display='none';status.textContent=f.name;});
-audioFile.addEventListener('change',()=>{const f=audioFile.files[0];if(!f)return;selectedAudio=f;
-if(audioUrl)URL.revokeObjectURL(audioUrl);audioUrl=URL.createObjectURL(f);audio.src=audioUrl;audio.load();
-audioName.textContent='🎵 '+f.name;});
+let videoUrl = null, audioUrl = null, selectedVideo = null, selectedAudio = null;
 
-document.getElementById('start').onclick=()=>{
-  if(!selectedVideo){chooseVideo();return}
+function fmt(sec){
+  if(!isFinite(sec)) return '00:00';
+  sec = Math.max(0, Math.floor(sec));
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
+  return h ? String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0') :
+             String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');
+}
+
+// Buka dialog galeri instan
+function openGallery() {
+  file.click();
+}
+
+box.addEventListener('click', () => {
+  openGallery();
+});
+
+audioLabel.addEventListener('click', (e) => {
+  audioFile.click();
+});
+
+file.addEventListener('change', () => {
+  const f = file.files[0];
+  if(!f) return;
+  selectedVideo = f;
+  if(videoUrl) URL.revokeObjectURL(videoUrl);
+  videoUrl = URL.createObjectURL(f);
+  video.src = videoUrl;
+  video.load();
+  placeholder.style.display = 'none';
+  status.textContent = f.name;
+});
+
+audioFile.addEventListener('change', () => {
+  const f = audioFile.files[0];
+  if(!f) return;
+  selectedAudio = f;
+  if(audioUrl) URL.revokeObjectURL(audioUrl);
+  audioUrl = URL.createObjectURL(f);
+  audio.src = audioUrl;
+  audio.load();
+  audioName.textContent = '🎵 ' + f.name;
+});
+
+// START langsung memicu MediaProjection tanpa delay
+document.getElementById('start').addEventListener('click', () => {
+  if(!selectedVideo){
+    openGallery();
+    return;
+  }
   if(window.AndroidBridge && window.AndroidBridge.startCapture){
     window.AndroidBridge.startCapture();
   }
   video.play().catch(()=>{});
-  if(selectedAudio)audio.play().catch(()=>{});
+  if(selectedAudio) audio.play().catch(()=>{});
+});
+
+document.getElementById('stop').addEventListener('click', () => {
+  if(!selectedVideo) return;
+  video.pause();
+  video.currentTime = 0;
+  if(selectedAudio){
+    audio.pause();
+    audio.currentTime = 0;
+  }
+});
+
+document.getElementById('play').addEventListener('click', () => {
+  if(!selectedVideo){
+    openGallery();
+    return;
+  }
+  if(video.paused){
+    video.play().catch(()=>{});
+    if(selectedAudio) audio.play().catch(()=>{});
+  } else {
+    video.pause();
+    if(selectedAudio) audio.pause();
+  }
+});
+
+document.getElementById('restart').addEventListener('click', () => {
+  if(!selectedVideo) return;
+  video.currentTime = 0;
+  video.play().catch(()=>{});
+  if(selectedAudio){
+    audio.currentTime = 0;
+    audio.play().catch(()=>{});
+  }
+});
+
+document.getElementById('loop').addEventListener('click', (e) => {
+  video.loop = !video.loop;
+  e.currentTarget.classList.toggle('active', video.loop);
+});
+
+document.getElementById('audioPlay').addEventListener('click', () => {
+  if(!selectedAudio){
+    audioFile.click();
+    return;
+  }
+  audio.play().catch(()=>{});
+});
+
+document.getElementById('audioStop').addEventListener('click', () => {
+  audio.pause();
+  audio.currentTime = 0;
+});
+
+document.getElementById('audioLoop').addEventListener('click', (e) => {
+  audio.loop = !audio.loop;
+  e.currentTarget.classList.toggle('active', audio.loop);
+});
+
+document.getElementById('volume').oninput = e => video.volume = e.target.value;
+document.getElementById('audioVolume').oninput = e => audio.volume = e.target.value;
+
+progress.oninput = () => {
+  if(video.duration) video.currentTime = (progress.value / 100) * video.duration;
 };
 
-document.getElementById('stop').onclick=()=>{if(!selectedVideo)return;video.pause();video.currentTime=0;if(selectedAudio){audio.pause();audio.currentTime=0}};
-document.getElementById('play').onclick=()=>{if(!selectedVideo){chooseVideo();return}
-if(video.paused){video.play().catch(()=>{});if(selectedAudio)audio.play().catch(()=>{})}else{video.pause();if(selectedAudio)audio.pause()}};
-document.getElementById('restart').onclick=()=>{if(!selectedVideo)return;video.currentTime=0;video.play().catch(()=>{});
-if(selectedAudio){audio.currentTime=0;audio.play().catch(()=>{})}};
-document.getElementById('loop').onclick=e=>{video.loop=!video.loop;e.currentTarget.classList.toggle('active',video.loop)};
-document.getElementById('audioPlay').onclick=()=>{if(!selectedAudio){audioFile.click();return}audio.play().catch(()=>{})};
-document.getElementById('audioStop').onclick=()=>{audio.pause();audio.currentTime=0};
-document.getElementById('audioLoop').onclick=e=>{audio.loop=!audio.loop;e.currentTarget.classList.toggle('active',audio.loop)};
-document.getElementById('volume').oninput=e=>video.volume=e.target.value;
-document.getElementById('audioVolume').oninput=e=>audio.volume=e.target.value;
-progress.oninput=()=>{if(video.duration)video.currentTime=(progress.value/100)*video.duration};
-video.addEventListener('loadedmetadata',()=>durationEl.textContent=fmt(video.duration));
-video.addEventListener('timeupdate',()=>{timeEl.textContent=fmt(video.currentTime);progress.value=video.duration?(video.currentTime/video.duration)*100:0});
-video.addEventListener('play',()=>status.textContent='▶ Memutar');
-video.addEventListener('pause',()=>status.textContent='Ⅱ Pause');
-video.addEventListener('ended',()=>status.textContent='✓ Selesai');
-document.getElementById('fullscreen').onclick=async()=>{try{
-if(document.fullscreenElement)await document.exitFullscreen();else if(box.requestFullscreen)await box.requestFullscreen({navigationUI:'hide'});
-}catch(e){status.textContent='Fullscreen tidak didukung'}};
+video.addEventListener('loadedmetadata', () => durationEl.textContent = fmt(video.duration));
+video.addEventListener('timeupdate', () => {
+  timeEl.textContent = fmt(video.currentTime);
+  progress.value = video.duration ? (video.currentTime / video.duration) * 100 : 0;
+});
+video.addEventListener('play', () => status.textContent = '▶ Memutar');
+video.addEventListener('pause', () => status.textContent = 'Ⅱ Pause');
+video.addEventListener('ended', () => status.textContent = '✓ Selesai');
 
-document.getElementById('tiktok').onclick=async()=>{
-if(!selectedVideo){chooseVideo();return}
-try{
-if(window.AndroidApp&&AndroidApp.shareVideo){AndroidApp.shareVideo();return}
-if(!navigator.share){alert('Browser tidak mendukung Share.');return}
-if(navigator.canShare&&!navigator.canShare({files:[selectedVideo]}))throw new Error('FILE_NOT_SUPPORTED');
-await navigator.share({files:[selectedVideo],title:'Video',text:'Bagikan video'});
-status.textContent='✓ Menu berbagi dibuka';
-}catch(err){if(err.name==='AbortError')status.textContent='Berbagi dibatalkan';else status.textContent='Video tidak dapat dibagikan'}
-};
+document.getElementById('fullscreen').addEventListener('click', async () => {
+  try {
+    if(document.fullscreenElement) await document.exitFullscreen();
+    else if(box.requestFullscreen) await box.requestFullscreen({navigationUI:'hide'});
+  } catch(e) {
+    status.textContent = 'Fullscreen tidak didukung';
+  }
+});
+
+document.getElementById('tiktok').addEventListener('click', async () => {
+  if(!selectedVideo){
+    openGallery();
+    return;
+  }
+  try {
+    if(window.AndroidApp && AndroidApp.shareVideo){
+      AndroidApp.shareVideo();
+      return;
+    }
+    if(!navigator.share){
+      alert('Browser tidak mendukung Share.');
+      return;
+    }
+    if(navigator.canShare && !navigator.canShare({files:[selectedVideo]})) throw new Error('FILE_NOT_SUPPORTED');
+    await navigator.share({files:[selectedVideo], title:'Video', text:'Bagikan video'});
+    status.textContent = '✓ Menu berbagi dibuka';
+  } catch(err) {
+    if(err.name === 'AbortError') status.textContent = 'Berbagi dibatalkan';
+    else status.textContent = 'Video tidak dapat dibagikan';
+  }
+});
 </script>
 </body>
 </html>
