@@ -19,32 +19,143 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Project Structure & Assets
+    - name: Setup Project Structure & MediaProjection Code
       run: |
-        # 1. Buat folder-folder standar termasuk folder assets
+        # 1. Siapkan struktur folder
         mkdir -p app/src/main/java/com/stream/studio
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
+        mkdir -p app/src/main/res/xml
         mkdir -p app/src/main/assets
 
-        # 2. Pindahkan index.html dan file web pendukung ke folder assets
+        # Pindahkan aset web jika ada
         mv -f index.html app/src/main/assets/ 2>/dev/null || true
         mv -f *.html *.js *.css app/src/main/assets/ 2>/dev/null || true
 
-        # 3. Pindahkan source code, layout, dan resource
-        mv -f AndroidManifest.xml app/src/main/ 2>/dev/null || true
-        mv -f *.kt *.java app/src/main/java/com/stream/studio/ 2>/dev/null || true
-        mv -f *activity*.xml app/src/main/res/layout/ 2>/dev/null || true
-        mv -f themes.xml strings.xml colors.xml app/src/main/res/values/ 2>/dev/null || true
+        # 2. Buat file_paths.xml untuk FileProvider
+        cat << 'EOF' > app/src/main/res/xml/file_paths.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <paths xmlns:android="http://schemas.android.com/apk/res/android">
+            <external-path name="external_files" path="."/>
+            <cache-path name="cache_files" path="."/>
+        </paths>
+        EOF
 
-        # 4. Pastikan deklarasi package selaras
-        for f in app/src/main/java/com/stream/studio/*.kt app/src/main/java/com/stream/studio/*.java; do
-          if [ -f "$f" ]; then
-            sed -i 's/^package .*/package com.stream.studio/' "$f"
-          fi
-        done
+        # 3. Buat AndroidManifest.xml lengkap dengan izin MediaProjection
+        cat << 'EOF' > app/src/main/AndroidManifest.xml
+        <?xml version="1.0" encoding="utf-8"?>
+        <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-        # 5. Konfigurasi settings.gradle
+            <uses-permission android:name="android.permission.INTERNET" />
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+            <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+            <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+            <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+            <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+
+            <queries>
+                <package android:name="com.zhiliaoapp.musically" />
+                <package android:name="com.ss.android.ugc.trill" />
+            </queries>
+
+            <application
+                android:allowBackup="true"
+                android:icon="@android:drawable/sym_def_app_icon"
+                android:label="StreamStudio"
+                android:roundIcon="@android:drawable/sym_def_app_icon"
+                android:supportsRtl="true"
+                android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+                
+                <activity
+                    android:name=".MainActivity"
+                    android:exported="true"
+                    android:configChanges="orientation|screenSize">
+                    <intent-filter>
+                        <action android:name="android.intent.action.MAIN" />
+                        <category android:name="android.intent.category.LAUNCHER" />
+                    </intent-filter>
+                </activity>
+
+                <provider
+                    android:name="androidx.core.content.FileProvider"
+                    android:authorities="com.stream.studio.fileprovider"
+                    android:exported="false"
+                    android:grantUriPermissions="true">
+                    <meta-data
+                        android:name="android.support.FILE_PROVIDER_PATHS"
+                        android:resource="@xml/file_paths" />
+                </provider>
+
+            </application>
+        </manifest>
+        EOF
+
+        # 4. Buat MainActivity.kt dengan pemanggil dialog MediaProjection
+        cat << 'EOF' > app/src/main/java/com/stream/studio/MainActivity.kt
+        package com.stream.studio
+
+        import android.app.Activity
+        import android.content.Context
+        import android.content.Intent
+        import android.media.projection.MediaProjectionManager
+        import android.os.Bundle
+        import android.webkit.JavascriptInterface
+        import android.webkit.WebSettings
+        import android.webkit.WebView
+        import android.webkit.WebViewClient
+        import android.widget.Toast
+        import androidx.appcompat.app.AppCompatActivity
+
+        class MainActivity : AppCompatActivity() {
+
+            private lateinit var webView: WebView
+            private val REQUEST_SCREEN_CAPTURE = 1001
+
+            override fun onCreate(savedInstanceState: Bundle?) {
+                super.onCreate(savedInstanceState)
+
+                webView = WebView(this)
+                setContentView(webView)
+
+                val settings: WebSettings = webView.settings
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.allowFileAccess = true
+
+                webView.webViewClient = WebViewClient()
+                webView.addJavascriptInterface(WebAppInterface(this), "AndroidBridge")
+
+                webView.loadUrl("file:///android_asset/index.html")
+            }
+
+            fun requestScreenCapture() {
+                val projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                startActivityForResult(projectionManager.createScreenCaptureIntent(), REQUEST_SCREEN_CAPTURE)
+            }
+
+            override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+                super.onActivityResult(requestCode, resultCode, data)
+                if (requestCode == REQUEST_SCREEN_CAPTURE) {
+                    if (resultCode == Activity.RESULT_OK) {
+                        Toast.makeText(this, "Transmisi Virtual Diaktifkan", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Toast.makeText(this, "Izin transmisi dibatalkan", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+
+            inner class WebAppInterface(private val activity: MainActivity) {
+                @JavascriptInterface
+                fun startCapture() {
+                    activity.runOnUiThread {
+                        activity.requestScreenCapture()
+                    }
+                }
+            }
+        }
+        EOF
+
+        # 5. Konfigurasi Gradle
         cat << 'EOF' > settings.gradle
         pluginManagement {
             repositories {
@@ -64,7 +175,6 @@ jobs:
         include ':app'
         EOF
 
-        # 6. Konfigurasi build.gradle root
         cat << 'EOF' > build.gradle
         buildscript {
             repositories {
@@ -78,14 +188,12 @@ jobs:
         }
         EOF
 
-        # 7. Konfigurasi gradle.properties
         cat << 'EOF' > gradle.properties
         org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
         android.useAndroidX=true
         android.nonTransitiveRClass=true
         EOF
 
-        # 8. Konfigurasi app/build.gradle
         cat << 'EOF' > app/build.gradle
         plugins {
             id 'com.android.application'
@@ -100,8 +208,8 @@ jobs:
                 applicationId "com.stream.studio"
                 minSdk 24
                 targetSdk 34
-                versionCode 2
-                versionName "1.0.1"
+                versionCode 3
+                versionName "1.0.2"
             }
 
             buildTypes {
@@ -122,8 +230,6 @@ jobs:
             implementation 'androidx.core:core-ktx:1.12.0'
             implementation 'androidx.appcompat:appcompat:1.6.1'
             implementation 'com.google.android.material:material:1.11.0'
-            implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
-            implementation 'androidx.webkit:webkit:1.9.0'
         }
         EOF
 
