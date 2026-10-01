@@ -1,35 +1,16 @@
-name: Build Android APK
+# 1. Rapikan susunan folder Android resmi
+mkdir -p app/src/main/java/com/stream/studio app/src/main/res/layout app/src/main/res/values
 
-on:
-  push:
-    branches: [ "main" ]
-  workflow_dispatch:
+# 2. Pindahkan file-file yang tercecer ke foldernya masing-masing
+mv -f AndroidManifest.xml app/src/main/ 2>/dev/null || true
+mv -f *.kt *.java app/src/main/java/com/stream/studio/ 2>/dev/null || true
+mv -f *activity*.xml app/src/main/res/layout/ 2>/dev/null || true
+mv -f themes.xml strings.xml colors.xml app/src/main/res/values/ 2>/dev/null || true
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+# 3. Generate wrapper Gradle resmi agar tidak pernah error lagi
+gradle wrapper
 
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Set up Java 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
-      with:
-        gradle-version: '8.4'
-
-    - name: Build Android APK
-      run: gradle assembleDebug --stacktrace
-
-    - name: Upload APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: StreamStudio-App
-        path: "**/build/outputs/apk/debug/*.apk"
-        
+# 4. Simpan dan kirim ke GitHub
+git add .
+git commit -m "Rapikan struktur folder Android dan generate gradlew"
+git push
