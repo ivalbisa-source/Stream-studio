@@ -19,20 +19,20 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Project Structure & MediaProjection Code
+    - name: Setup Project Files & Complete Native Android Implementation
       run: |
-        # 1. Siapkan struktur folder
+        # 1. Folder structure
         mkdir -p app/src/main/java/com/stream/studio
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
         mkdir -p app/src/main/res/xml
         mkdir -p app/src/main/assets
 
-        # Pindahkan aset web jika ada
+        # Pindahkan aset web jika ada di luar
         mv -f index.html app/src/main/assets/ 2>/dev/null || true
         mv -f *.html *.js *.css app/src/main/assets/ 2>/dev/null || true
 
-        # 2. Buat file_paths.xml untuk FileProvider
+        # 2. FileProvider config
         cat << 'EOF' > app/src/main/res/xml/file_paths.xml
         <?xml version="1.0" encoding="utf-8"?>
         <paths xmlns:android="http://schemas.android.com/apk/res/android">
@@ -41,7 +41,7 @@ jobs:
         </paths>
         EOF
 
-        # 3. Buat AndroidManifest.xml lengkap dengan izin MediaProjection
+        # 3. AndroidManifest.xml lengkap
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -90,7 +90,7 @@ jobs:
         </manifest>
         EOF
 
-        # 4. Buat MainActivity.kt dengan pemanggil dialog MediaProjection
+        # 4. MainActivity.kt (Dukungan Galeri, MediaProjection Dialog, & Share TikTok Native)
         cat << 'EOF' > app/src/main/java/com/stream/studio/MainActivity.kt
         package com.stream.studio
 
@@ -98,8 +98,11 @@ jobs:
         import android.content.Context
         import android.content.Intent
         import android.media.projection.MediaProjectionManager
+        import android.net.Uri
         import android.os.Bundle
         import android.webkit.JavascriptInterface
+        import android.webkit.ValueCallback
+        import android.webkit.WebChromeClient
         import android.webkit.WebSettings
         import android.webkit.WebView
         import android.webkit.WebViewClient
@@ -109,7 +112,9 @@ jobs:
         class MainActivity : AppCompatActivity() {
 
             private lateinit var webView: WebView
+            private var filePathCallback: ValueCallback<Array<Uri>>? = null
             private val REQUEST_SCREEN_CAPTURE = 1001
+            private val REQUEST_FILE_CHOOSER = 1002
 
             override fun onCreate(savedInstanceState: Bundle?) {
                 super.onCreate(savedInstanceState)
@@ -121,9 +126,39 @@ jobs:
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.allowFileAccess = true
+                settings.allowContentAccess = true
+                settings.mediaPlaybackRequiresUserGesture = false
 
                 webView.webViewClient = WebViewClient()
-                webView.addJavascriptInterface(WebAppInterface(this), "AndroidBridge")
+
+                // WebChromeClient untuk membuka Galeri Android secara otomatis
+                webView.webChromeClient = object : WebChromeClient() {
+                    override fun onShowFileChooser(
+                        view: WebView?,
+                        filePathCallback: ValueCallback<Array<Uri>>?,
+                        fileChooserParams: FileChooserParams?
+                    ): Boolean {
+                        this@MainActivity.filePathCallback?.onReceiveValue(null)
+                        this@MainActivity.filePathCallback = filePathCallback
+
+                        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+                            type = "*/*"
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                        }
+                        try {
+                            startActivityForResult(Intent.createChooser(intent, "Pilih Media"), REQUEST_FILE_CHOOSER)
+                        } catch (e: Exception) {
+                            this@MainActivity.filePathCallback = null
+                            return false
+                        }
+                        return true
+                    }
+                }
+
+                // Bridge untuk JavaScript di index.html
+                val bridge = WebAppInterface(this)
+                webView.addJavascriptInterface(bridge, "AndroidBridge")
+                webView.addJavascriptInterface(bridge, "AndroidApp")
 
                 webView.loadUrl("file:///android_asset/index.html")
             }
@@ -133,14 +168,42 @@ jobs:
                 startActivityForResult(projectionManager.createScreenCaptureIntent(), REQUEST_SCREEN_CAPTURE)
             }
 
+            fun shareToTikTokDirectly() {
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "video/*"
+                    `package` = "com.zhiliaoapp.musically"
+                }
+                try {
+                    startActivity(shareIntent)
+                } catch (e: Exception) {
+                    val fallback = Intent(Intent.ACTION_SEND).apply {
+                        type = "video/*"
+                    }
+                    startActivity(Intent.createChooser(fallback, "Bagikan ke TikTok"))
+                }
+            }
+
             override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
                 super.onActivityResult(requestCode, resultCode, data)
+
+                // Respons Dialog MediaProjection
                 if (requestCode == REQUEST_SCREEN_CAPTURE) {
                     if (resultCode == Activity.RESULT_OK) {
-                        Toast.makeText(this, "Transmisi Virtual Diaktifkan", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Transmisi Virtual Diaktifkan!", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(this, "Izin transmisi dibatalkan", Toast.LENGTH_SHORT).show()
                     }
+                }
+
+                // Respons Pemilihan File Galeri
+                if (requestCode == REQUEST_FILE_CHOOSER) {
+                    val resultUri = if (resultCode == Activity.RESULT_OK && data != null) {
+                        data.data?.let { arrayOf(it) }
+                    } else {
+                        null
+                    }
+                    filePathCallback?.onReceiveValue(resultUri)
+                    filePathCallback = null
                 }
             }
 
@@ -149,6 +212,13 @@ jobs:
                 fun startCapture() {
                     activity.runOnUiThread {
                         activity.requestScreenCapture()
+                    }
+                }
+
+                @JavascriptInterface
+                fun shareVideo() {
+                    activity.runOnUiThread {
+                        activity.shareToTikTokDirectly()
                     }
                 }
             }
@@ -208,8 +278,8 @@ jobs:
                 applicationId "com.stream.studio"
                 minSdk 24
                 targetSdk 34
-                versionCode 3
-                versionName "1.0.2"
+                versionCode 4
+                versionName "1.0.3"
             }
 
             buildTypes {
