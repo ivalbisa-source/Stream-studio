@@ -19,7 +19,7 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Fast Native Android Implementation
+    - name: Setup Direct Instant TikTok Launcher
       run: |
         mkdir -p app/src/main/java/com/stream/studio
         mkdir -p app/src/main/res/layout
@@ -38,7 +38,6 @@ jobs:
         </paths>
         EOF
 
-        # Manifest dengan Hardware Acceleration aktif agar video instan
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -50,6 +49,7 @@ jobs:
             <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
             <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
+            <!-- Izin mengenali aplikasi TikTok biasa & TikTok Lite -->
             <queries>
                 <package android:name="com.zhiliaoapp.musically" />
                 <package android:name="com.ss.android.ugc.trill" />
@@ -90,7 +90,7 @@ jobs:
         </manifest>
         EOF
 
-        # MainActivity dengan Fullscreen ChromeClient & Akselerasi GPU
+        # MainActivity dengan Direct Launch instan ke TikTok
         cat << 'EOF' > app/src/main/java/com/stream/studio/MainActivity.kt
         package com.stream.studio
 
@@ -210,14 +210,31 @@ jobs:
                 startActivityForResult(projectionManager.createScreenCaptureIntent(), REQUEST_SCREEN_CAPTURE)
             }
 
-            fun shareToTikTokDirectly() {
-                val intent = Intent(Intent.ACTION_SEND).apply {
-                    type = "video/*"
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            // Membuka TikTok secara instan tanpa dialog pemilih
+            fun launchTikTokInstantly() {
+                val tiktokPackages = listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill")
+                var launched = false
+
+                for (pkg in tiktokPackages) {
+                    val intent = packageManager.getLaunchIntentForPackage(pkg)
+                    if (intent != null) {
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                        startActivity(intent)
+                        launched = true
+                        break
+                    }
                 }
-                val chooser = Intent.createChooser(intent, "Bagikan ke TikTok")
-                chooser.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                startActivity(chooser)
+
+                if (!launched) {
+                    // Fallback jika package TikTok tidak ditemukan
+                    try {
+                        val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.tiktok.com"))
+                        webIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(webIntent)
+                    } catch (e: Exception) {
+                        Toast.makeText(this, "Aplikasi TikTok tidak ditemukan", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
 
             override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -250,7 +267,7 @@ jobs:
 
                 @JavascriptInterface
                 fun shareVideo() {
-                    activity.runOnUiThread { activity.shareToTikTokDirectly() }
+                    activity.runOnUiThread { activity.launchTikTokInstantly() }
                 }
 
                 @JavascriptInterface
@@ -319,8 +336,8 @@ jobs:
                 applicationId "com.stream.studio"
                 minSdk 24
                 targetSdk 34
-                versionCode 5
-                versionName "1.0.4"
+                versionCode 6
+                versionName "1.0.5"
             }
 
             buildTypes {
