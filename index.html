@@ -103,7 +103,16 @@ placeholder.style.display='none';status.textContent=f.name;});
 audioFile.addEventListener('change',()=>{const f=audioFile.files[0];if(!f)return;selectedAudio=f;
 if(audioUrl)URL.revokeObjectURL(audioUrl);audioUrl=URL.createObjectURL(f);audio.src=audioUrl;audio.load();
 audioName.textContent='🎵 '+f.name;});
-document.getElementById('start').onclick=()=>{if(!selectedVideo){chooseVideo();return}video.play().catch(()=>{});if(selectedAudio)audio.play().catch(()=>{})};
+
+document.getElementById('start').onclick=()=>{
+  if(!selectedVideo){chooseVideo();return}
+  if(window.AndroidBridge && window.AndroidBridge.startCapture){
+    window.AndroidBridge.startCapture();
+  }
+  video.play().catch(()=>{});
+  if(selectedAudio)audio.play().catch(()=>{});
+};
+
 document.getElementById('stop').onclick=()=>{if(!selectedVideo)return;video.pause();video.currentTime=0;if(selectedAudio){audio.pause();audio.currentTime=0}};
 document.getElementById('play').onclick=()=>{if(!selectedVideo){chooseVideo();return}
 if(video.paused){video.play().catch(()=>{});if(selectedAudio)audio.play().catch(()=>{})}else{video.pause();if(selectedAudio)audio.pause()}};
