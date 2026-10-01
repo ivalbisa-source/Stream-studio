@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Stream Studio</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#080a0f;color:#fff;font-family:Arial,sans-serif;padding:14px}
+.app{max-width:720px;margin:auto}
+.header{text-align:center;font-size:22px;font-weight:800;margin:4px 0 14px}
+.card{background:#151922;border:1px solid #282e3a;border-radius:18px;padding:12px;margin-bottom:12px}
+.videoBox{position:relative;background:#000;border-radius:14px;overflow:hidden;aspect-ratio:9/16;max-height:68vh;margin:auto;display:flex;align-items:center;justify-content:center}
+video{width:100%;height:100%;object-fit:contain;background:#000}
+.placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#aeb6c5;padding:25px;pointer-events:none}
+.status{position:absolute;top:9px;left:9px;background:#000b;padding:7px 10px;border-radius:9px;font-size:12px;z-index:3;pointer-events:none}
+.controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+button{border:0;border-radius:13px;padding:14px;color:#fff;background:#252b38;font-size:15px;font-weight:800}
+button.active{background:#16a34a}.primary{background:#2563eb}
+.tiktok{background:linear-gradient(135deg,#00f2ea,#111,#ff0050);font-size:16px;grid-column:1/-1}
+.audioPick{display:block;border:2px dashed #394253;border-radius:13px;padding:14px;text-align:center;background:#11151e;color:#d7dce5;cursor:pointer}
+.audioName{font-size:13px;color:#b7bfcd;margin-top:9px;word-break:break-word}
+.info{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.infoBox{background:#202531;border-radius:12px;padding:11px;text-align:center}
+.label{font-size:11px;color:#9ca3af}.value{font-size:17px;font-weight:800;margin-top:4px}
+input[type=range]{width:100%}.note{font-size:12px;color:#9ca3af;line-height:1.45}
+.videoBox:fullscreen{width:100vw;height:100vh;max-width:none;max-height:none;border-radius:0;background:#000}
+.videoBox:fullscreen video{width:100vw;height:100vh;object-fit:contain}
+</style>
+</head>
+<body>
+<div class="app">
+<div class="header">🎬 Stream Studio</div>
+<div class="card">
+<div class="videoBox" id="videoBox">
+<video id="video" playsinline webkit-playsinline preload="metadata"></video>
+<div class="placeholder" id="placeholder">👆 Tekan area video<br>untuk memilih video</div>
+<div class="status" id="status">Belum ada video</div>
+</div>
+<input id="file" type="file" accept="video/*" hidden>
+</div>
+
+<div class="card">
+<div class="controls">
+<button id="start" class="primary">⭐ START</button>
+<button id="stop">■ STOP</button>
+<button id="play">▶ PLAY / PAUSE</button>
+<button id="restart">↻ RESTART</button>
+<button id="loop">🔁 LOOP VIDEO</button>
+<button id="fullscreen">⛶ FULLSCREEN</button>
+<button id="tiktok" class="tiktok">🎵 SHARE KE TIKTOK</button>
+</div>
+</div>
+
+<div class="card">
+<label class="audioPick">🎧 PILIH AUDIO
+<input id="audioFile" type="file" accept="audio/*" hidden>
+</label>
+<div class="audioName" id="audioName">Belum ada audio</div>
+<audio id="audio" preload="metadata"></audio>
+<div class="controls" style="margin-top:10px">
+<button id="audioPlay">▶ PLAY AUDIO</button>
+<button id="audioStop">■ STOP AUDIO</button>
+<button id="audioLoop">🔁 LOOP AUDIO</button>
+</div>
+<div style="margin-top:12px"><div class="label">VOLUME AUDIO</div>
+<input id="audioVolume" type="range" min="0" max="1" step=".01" value="1"></div>
+</div>
+
+<div class="card">
+<div class="info">
+<div class="infoBox"><div class="label">WAKTU VIDEO</div><div class="value" id="time">00:00</div></div>
+<div class="infoBox"><div class="label">DURASI</div><div class="value" id="duration">00:00</div></div>
+</div>
+<div style="margin-top:10px"><input id="progress" type="range" min="0" max="100" value="0"></div>
+</div>
+
+<div class="card">
+<div class="label">VOLUME VIDEO</div>
+<input id="volume" type="range" min="0" max="1" step=".01" value="1">
+<div class="note" style="margin-top:10px">Versi Android native. Kecepatan video tidak digunakan.</div>
+</div>
+</div>
+
+<script>
+const file=document.getElementById('file'), video=document.getElementById('video');
+const box=document.getElementById('videoBox'), placeholder=document.getElementById('placeholder');
+const status=document.getElementById('status'), progress=document.getElementById('progress');
+const timeEl=document.getElementById('time'), durationEl=document.getElementById('duration');
+const audioFile=document.getElementById('audioFile'), audio=document.getElementById('audio');
+const audioName=document.getElementById('audioName');
+let videoUrl=null,audioUrl=null,selectedVideo=null,selectedAudio=null;
+
+function fmt(sec){if(!isFinite(sec))return'00:00';sec=Math.max(0,Math.floor(sec));
+const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;
+return h?String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'):
+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0');}
+function chooseVideo(){file.click()}
+box.addEventListener('click',e=>{if(e.target===video&&selectedVideo)return;chooseVideo()});
+file.addEventListener('change',()=>{const f=file.files[0];if(!f)return;selectedVideo=f;
+if(videoUrl)URL.revokeObjectURL(videoUrl);videoUrl=URL.createObjectURL(f);video.src=videoUrl;video.load();
+placeholder.style.display='none';status.textContent=f.name;});
+audioFile.addEventListener('change',()=>{const f=audioFile.files[0];if(!f)return;selectedAudio=f;
+if(audioUrl)URL.revokeObjectURL(audioUrl);audioUrl=URL.createObjectURL(f);audio.src=audioUrl;audio.load();
+audioName.textContent='🎵 '+f.name;});
+document.getElementById('start').onclick=()=>{if(!selectedVideo){chooseVideo();return}video.play().catch(()=>{});if(selectedAudio)audio.play().catch(()=>{})};
+document.getElementById('stop').onclick=()=>{if(!selectedVideo)return;video.pause();video.currentTime=0;if(selectedAudio){audio.pause();audio.currentTime=0}};
+document.getElementById('play').onclick=()=>{if(!selectedVideo){chooseVideo();return}
+if(video.paused){video.play().catch(()=>{});if(selectedAudio)audio.play().catch(()=>{})}else{video.pause();if(selectedAudio)audio.pause()}};
+document.getElementById('restart').onclick=()=>{if(!selectedVideo)return;video.currentTime=0;video.play().catch(()=>{});
+if(selectedAudio){audio.currentTime=0;audio.play().catch(()=>{})}};
+document.getElementById('loop').onclick=e=>{video.loop=!video.loop;e.currentTarget.classList.toggle('active',video.loop)};
+document.getElementById('audioPlay').onclick=()=>{if(!selectedAudio){audioFile.click();return}audio.play().catch(()=>{})};
+document.getElementById('audioStop').onclick=()=>{audio.pause();audio.currentTime=0};
+document.getElementById('audioLoop').onclick=e=>{audio.loop=!audio.loop;e.currentTarget.classList.toggle('active',audio.loop)};
+document.getElementById('volume').oninput=e=>video.volume=e.target.value;
+document.getElementById('audioVolume').oninput=e=>audio.volume=e.target.value;
+progress.oninput=()=>{if(video.duration)video.currentTime=(progress.value/100)*video.duration};
+video.addEventListener('loadedmetadata',()=>durationEl.textContent=fmt(video.duration));
+video.addEventListener('timeupdate',()=>{timeEl.textContent=fmt(video.currentTime);progress.value=video.duration?(video.currentTime/video.duration)*100:0});
+video.addEventListener('play',()=>status.textContent='▶ Memutar');
+video.addEventListener('pause',()=>status.textContent='Ⅱ Pause');
+video.addEventListener('ended',()=>status.textContent='✓ Selesai');
+document.getElementById('fullscreen').onclick=async()=>{try{
+if(document.fullscreenElement)await document.exitFullscreen();else if(box.requestFullscreen)await box.requestFullscreen({navigationUI:'hide'});
+}catch(e){status.textContent='Fullscreen tidak didukung'}};
+
+document.getElementById('tiktok').onclick=async()=>{
+if(!selectedVideo){chooseVideo();return}
+try{
+if(window.AndroidApp&&AndroidApp.shareVideo){AndroidApp.shareVideo();return}
+if(!navigator.share){alert('Browser tidak mendukung Share.');return}
+if(navigator.canShare&&!navigator.canShare({files:[selectedVideo]}))throw new Error('FILE_NOT_SUPPORTED');
+await navigator.share({files:[selectedVideo],title:'Video',text:'Bagikan video'});
+status.textContent='✓ Menu berbagi dibuka';
+}catch(err){if(err.name==='AbortError')status.textContent='Berbagi dibatalkan';else status.textContent='Video tidak dapat dibagikan'}
+};
+</script>
+</body>
+</html>
