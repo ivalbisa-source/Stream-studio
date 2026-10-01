@@ -19,9 +19,23 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Organize Folder Structure
+    - name: Fix Project and Folder Structure
       run: |
-        mkdir -p app/src/main/java/com/stream/studio app/src/main/res/layout app/src/main/res/values
+        # Buat susunan folder resmi
+        mkdir -p app/src/main/java/com/stream/studio
+        mkdir -p app/src/main/res/layout
+        mkdir -p app/src/main/res/values
+
+        # Pisahkan file build.gradle modul app jika belum di dalam app/
+        if [ ! -f "app/build.gradle" ]; then
+          # Cari file build.gradle yang berisi com.android.application
+          for f in $(grep -l "com.android.application" *.gradle 2>/dev/null); do
+            mv "$f" app/build.gradle
+            break
+          done
+        fi
+
+        # Pindahkan file resource dan kode
         mv -f AndroidManifest.xml app/src/main/ 2>/dev/null || true
         mv -f *.kt *.java app/src/main/java/com/stream/studio/ 2>/dev/null || true
         mv -f *activity*.xml app/src/main/res/layout/ 2>/dev/null || true
@@ -33,10 +47,11 @@ jobs:
         gradle-version: '8.4'
 
     - name: Build Android APK
-      run: gradle assembleDebug --stacktrace
+      run: gradle assembleDebug
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
+      if: always()
       with:
         name: StreamStudio-App
         path: "**/build/outputs/apk/debug/*.apk"
