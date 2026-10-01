@@ -19,27 +19,32 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Project Structure & Clean Gradle Files
+    - name: Setup Project Structure & Assets
       run: |
-        # Buat susunan folder resmi
+        # 1. Buat folder-folder standar termasuk folder assets
         mkdir -p app/src/main/java/com/stream/studio
         mkdir -p app/src/main/res/layout
         mkdir -p app/src/main/res/values
+        mkdir -p app/src/main/assets
 
-        # Pindahkan file ke lokasi modul app
+        # 2. Pindahkan index.html dan file web pendukung ke folder assets
+        mv -f index.html app/src/main/assets/ 2>/dev/null || true
+        mv -f *.html *.js *.css app/src/main/assets/ 2>/dev/null || true
+
+        # 3. Pindahkan source code, layout, dan resource
         mv -f AndroidManifest.xml app/src/main/ 2>/dev/null || true
         mv -f *.kt *.java app/src/main/java/com/stream/studio/ 2>/dev/null || true
         mv -f *activity*.xml app/src/main/res/layout/ 2>/dev/null || true
         mv -f themes.xml strings.xml colors.xml app/src/main/res/values/ 2>/dev/null || true
 
-        # Pastikan baris pertama file Kotlin/Java memiliki deklarasi package yang cocok
+        # 4. Pastikan deklarasi package selaras
         for f in app/src/main/java/com/stream/studio/*.kt app/src/main/java/com/stream/studio/*.java; do
           if [ -f "$f" ]; then
             sed -i 's/^package .*/package com.stream.studio/' "$f"
           fi
         done
 
-        # 1. settings.gradle
+        # 5. Konfigurasi settings.gradle
         cat << 'EOF' > settings.gradle
         pluginManagement {
             repositories {
@@ -59,7 +64,7 @@ jobs:
         include ':app'
         EOF
 
-        # 2. build.gradle tingkat root
+        # 6. Konfigurasi build.gradle root
         cat << 'EOF' > build.gradle
         buildscript {
             repositories {
@@ -73,14 +78,14 @@ jobs:
         }
         EOF
 
-        # 3. gradle.properties
+        # 7. Konfigurasi gradle.properties
         cat << 'EOF' > gradle.properties
         org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
         android.useAndroidX=true
         android.nonTransitiveRClass=true
         EOF
 
-        # 4. app/build.gradle
+        # 8. Konfigurasi app/build.gradle
         cat << 'EOF' > app/build.gradle
         plugins {
             id 'com.android.application'
@@ -95,8 +100,8 @@ jobs:
                 applicationId "com.stream.studio"
                 minSdk 24
                 targetSdk 34
-                versionCode 1
-                versionName "1.0"
+                versionCode 2
+                versionName "1.0.1"
             }
 
             buildTypes {
@@ -118,6 +123,7 @@ jobs:
             implementation 'androidx.appcompat:appcompat:1.6.1'
             implementation 'com.google.android.material:material:1.11.0'
             implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+            implementation 'androidx.webkit:webkit:1.9.0'
         }
         EOF
 
@@ -130,7 +136,7 @@ jobs:
     - name: Build Android APK
       env:
         ANDROID_HOME: /usr/local/lib/android/sdk
-      run: gradle :app:assembleDebug --no-daemon --info
+      run: gradle :app:assembleDebug --no-daemon
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
