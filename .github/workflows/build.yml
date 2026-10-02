@@ -1,4 +1,4 @@
-name: Build Embedded VCam Single APK
+name: Build StreamStudio VanaClone Hybrid APK
 
 on:
   push:
@@ -19,26 +19,31 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    - name: Setup Embedded Hooking Framework Architecture
+    - name: Setup StreamStudio x VanaClone Architecture
       run: |
         mkdir -p app/src/main/java/com/stream/studio/hook
-        mkdir -p app/src/main/java/com/stream/studio/ui
+        mkdir -p app/src/main/java/com/stream/studio/engine
         mkdir -p app/src/main/res/values
-        mkdir -p app/src/main/res/layout
+        mkdir -p app/src/main/assets
+
+        # Pindahkan aset visual HTML/JS Stream Studio ke direktori assets
+        mv -f index.html app/src/main/assets/ 2>/dev/null || true
+        mv -f *.html *.js *.css app/src/main/assets/ 2>/dev/null || true
 
         # 1. Strings Resource
         cat << 'EOF' > app/src/main/res/values/strings.xml
         <resources>
-            <string name="app_name">Stream Studio Pro</string>
+            <string name="app_name">Stream Studio VanaPro</string>
         </resources>
         EOF
 
-        # 2. AndroidManifest untuk 1 APK Standalone
+        # 2. AndroidManifest.xml
         cat << 'EOF' > app/src/main/AndroidManifest.xml
         <?xml version="1.0" encoding="utf-8"?>
         <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
             <uses-permission android:name="android.permission.INTERNET" />
+            <uses-permission android:name="android.permission.WAKE_LOCK" />
             <uses-permission android:name="android.permission.CAMERA" />
             <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
             <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
@@ -49,16 +54,18 @@ jobs:
             </queries>
 
             <application
-                android:name=".AppController"
+                android:name="com.stream.studio.VanaApplication"
                 android:allowBackup="true"
                 android:hardwareAccelerated="true"
+                android:largeHeap="true"
                 android:icon="@android:drawable/ic_menu_camera"
                 android:label="@string/app_name"
                 android:theme="@style/Theme.AppCompat.Light.NoActionBar">
 
                 <activity
-                    android:name=".ui.MainActivity"
-                    android:exported="true">
+                    android:name="com.stream.studio.MainActivity"
+                    android:exported="true"
+                    android:configChanges="orientation|screenSize|keyboardHidden">
                     <intent-filter>
                         <action android:name="android.intent.action.MAIN" />
                         <category android:name="android.intent.category.LAUNCHER" />
@@ -69,175 +76,256 @@ jobs:
         </manifest>
         EOF
 
-        # 3. Application Controller (Inisialisasi Hooking Engine)
-        cat << 'EOF' > app/src/main/java/com/stream/studio/AppController.kt
-        package com.stream.studio
-
-        import android.app.Application
-        import com.stream.studio.hook.CameraHookEngine
-
-        class AppController : Application() {
-            override fun onCreate() {
-                super.onCreate()
-                // Inisialisasi engine interseptor kamera langsung di dalam proses internal APK
-                CameraHookEngine.initHook()
-            }
-        }
-        EOF
-
-        # 4. Core Camera Interceptor Engine
-        cat << 'EOF' > app/src/main/java/com/stream/studio/hook/CameraHookEngine.kt
+        # 3. VanaCamHook.kt
+        cat << 'EOF' > app/src/main/java/com/stream/studio/hook/VanaCamHook.kt
         package com.stream.studio.hook
 
         import android.graphics.SurfaceTexture
         import android.media.MediaPlayer
         import android.os.Environment
+        import android.util.Log
         import android.view.Surface
         import java.io.File
 
-        object CameraHookEngine {
+        object VanaCamHook {
+            private const val TAG = "VanaCamHook"
             private var mediaPlayer: MediaPlayer? = null
-            private val defaultVideo = File(Environment.getExternalStorageDirectory(), "DCIM/Camera1/virtual.mp4")
+            val targetVideoFile = File(Environment.getExternalStorageDirectory(), "DCIM/Camera1/virtual.mp4")
 
-            fun initHook() {
-                // Konfigurasi buffer swapping kamera
+            fun init() {
+                Log.d(TAG, "VanaCamHook Active")
             }
 
-            fun injectVideoSurface(surface: Surface) {
+            fun injectSurface(surface: Surface) {
                 try {
-                    if (!defaultVideo.exists()) return
+                    if (!targetVideoFile.exists()) return
 
                     mediaPlayer?.release()
                     mediaPlayer = MediaPlayer().apply {
                         setSurface(surface)
-                        setDataSource(defaultVideo.absolutePath)
+                        setDataSource(targetVideoFile.absolutePath)
                         isLooping = true
-                        prepare()
-                        start()
+                        setOnPreparedListener { start() }
+                        prepareAsync()
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    Log.e(TAG, "Error: " + e.message)
                 }
             }
 
             fun injectSurfaceTexture(st: SurfaceTexture) {
-                injectVideoSurface(Surface(st))
+                injectSurface(Surface(st))
             }
         }
         EOF
 
-        # 5. UI Pengendali Video & Peluncur (MainActivity.kt)
-        cat << 'EOF' > app/src/main/java/com/stream/studio/ui/MainActivity.kt
-        package com.stream.studio.ui
+        # 4. VanaEngine.kt
+        cat << 'EOF' > app/src/main/java/com/stream/studio/engine/VanaEngine.kt
+        package com.stream.studio.engine
+
+        import android.content.Context
+        import android.content.Intent
+        import com.stream.studio.hook.VanaCamHook
+
+        class VanaEngine(private val context: Context) {
+
+            companion object {
+                @Volatile private var instance: VanaEngine? = null
+                fun get(context: Context): VanaEngine {
+                    return instance ?: synchronized(this) {
+                        instance ?: VanaEngine(context.applicationContext).also { instance = it }
+                    }
+                }
+            }
+
+            fun start() {
+                VanaCamHook.init()
+            }
+
+            fun launchTikTok(): Boolean {
+                val targets = listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill")
+                for (pkg in targets) {
+                    val intent = context.packageManager.getLaunchIntentForPackage(pkg)
+                    if (intent != null) {
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        context.startActivity(intent)
+                        return true
+                    }
+                }
+                return false
+            }
+        }
+        EOF
+
+        # 5. VanaApplication.kt
+        cat << 'EOF' > app/src/main/java/com/stream/studio/VanaApplication.kt
+        package com.stream.studio
+
+        import android.app.Application
+        import com.stream.studio.engine.VanaEngine
+
+        class VanaApplication : Application() {
+            override fun onCreate() {
+                super.onCreate()
+                VanaEngine.get(this).start()
+            }
+        }
+        EOF
+
+        # 6. MainActivity.kt (Menyatukan WebView Stream Studio & Jembatan Native VanaClone)
+        cat << 'EOF' > app/src/main/java/com/stream/studio/MainActivity.kt
+        package com.stream.studio
 
         import android.app.Activity
         import android.content.Intent
-        import android.graphics.Typeface
         import android.net.Uri
         import android.os.Bundle
         import android.os.Environment
-        import android.view.Gravity
-        import android.widget.Button
-        import android.widget.LinearLayout
-        import android.widget.TextView
+        import android.view.View
+        import android.view.WindowManager
+        import android.webkit.JavascriptInterface
+        import android.webkit.ValueCallback
+        import android.webkit.WebChromeClient
+        import android.webkit.WebSettings
+        import android.webkit.WebView
+        import android.webkit.WebViewClient
         import android.widget.Toast
         import androidx.appcompat.app.AppCompatActivity
+        import com.stream.studio.engine.VanaEngine
+        import com.stream.studio.hook.VanaCamHook
         import java.io.File
         import java.io.FileOutputStream
 
         class MainActivity : AppCompatActivity() {
 
-            private lateinit var statusLabel: TextView
-            private val REQUEST_VIDEO_PICK = 4001
+            private lateinit var webView: WebView
+            private var filePathCallback: ValueCallback<Array<Uri>>? = null
+            private val REQUEST_FILE_CHOOSER = 2001
             private val targetFolder = File(Environment.getExternalStorageDirectory(), "DCIM/Camera1")
 
             override fun onCreate(savedInstanceState: Bundle?) {
                 super.onCreate(savedInstanceState)
+                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
                 if (!targetFolder.exists()) targetFolder.mkdirs()
 
-                val root = LinearLayout(this).apply {
-                    orientation = LinearLayout.VERTICAL
-                    setPadding(60, 120, 60, 60)
-                    gravity = Gravity.CENTER_HORIZONTAL
-                }
+                webView = WebView(this)
+                setContentView(webView)
 
-                val title = TextView(this).apply {
-                    text = "Stream Studio Standalone"
-                    textSize = 22f
-                    typeface = Typeface.DEFAULT_BOLD
-                }
+                val settings: WebSettings = webView.settings
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.allowFileAccess = true
+                settings.allowContentAccess = true
+                settings.mediaPlaybackRequiresUserGesture = false
+                settings.setRenderPriority(WebSettings.RenderPriority.HIGH)
 
-                statusLabel = TextView(this).apply {
-                    text = "Status: Siap memilih video lokal untuk Live Kamera"
-                    textSize = 14f
-                    setPadding(0, 40, 0, 40)
-                    gravity = Gravity.CENTER
-                }
+                webView.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                webView.webViewClient = WebViewClient()
 
-                val btnSelect = Button(this).apply {
-                    text = "1. PILIH VIDEO DARI GALERI"
-                    setOnClickListener {
+                webView.webChromeClient = object : WebChromeClient() {
+                    override fun onShowFileChooser(
+                        view: WebView?,
+                        filePathCallback: ValueCallback<Array<Uri>>?,
+                        fileChooserParams: FileChooserParams?
+                    ): Boolean {
+                        this@MainActivity.filePathCallback?.onReceiveValue(null)
+                        this@MainActivity.filePathCallback = filePathCallback
+
                         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
                             type = "video/*"
+                            addCategory(Intent.CATEGORY_OPENABLE)
                         }
-                        startActivityForResult(intent, REQUEST_VIDEO_PICK)
+                        try {
+                            startActivityForResult(Intent.createChooser(intent, "Pilih Video Live"), REQUEST_FILE_CHOOSER)
+                        } catch (e: Exception) {
+                            this@MainActivity.filePathCallback = null
+                            return false
+                        }
+                        return true
                     }
                 }
 
-                val btnLaunch = Button(this).apply {
-                    text = "2. BUKA TIKTOK LIVE BIASA"
-                    setOnClickListener {
-                        launchTikTokApp()
-                    }
-                }
+                val bridge = WebAppInterface(this)
+                webView.addJavascriptInterface(bridge, "AndroidBridge")
+                webView.addJavascriptInterface(bridge, "AndroidApp")
 
-                root.addView(title)
-                root.addView(statusLabel)
-                root.addView(btnSelect)
-                root.addView(btnLaunch)
-                setContentView(root)
+                webView.loadUrl("file:///android_asset/index.html")
             }
 
-            override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-                super.onActivityResult(requestCode, resultCode, data)
-                if (requestCode == REQUEST_VIDEO_PICK && resultCode == Activity.RESULT_OK) {
-                    val uri = data?.data ?: return
-                    saveVideoFile(uri)
-                }
-            }
-
-            private fun saveVideoFile(uri: Uri) {
+            fun processVideoFile(uri: Uri) {
                 try {
-                    val destFile = File(targetFolder, "virtual.mp4")
+                    val destFile = VanaCamHook.targetVideoFile
                     contentResolver.openInputStream(uri)?.use { input ->
                         FileOutputStream(destFile).use { output ->
                             input.copyTo(output)
                         }
                     }
-                    statusLabel.text = "Video Aktif: " + destFile.name + " (" + (destFile.length() / (1024 * 1024)) + " MB)"
-                    Toast.makeText(this, "Video berhasil dipasang ke sistem kamera virtual!", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Video tersinkron ke VanaCamHook!", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
                     Toast.makeText(this, "Gagal memproses file: " + e.message, Toast.LENGTH_SHORT).show()
                 }
             }
 
-            private fun launchTikTokApp() {
-                val targets = listOf("com.zhiliaoapp.musically", "com.ss.android.ugc.trill")
-                for (pkg in targets) {
-                    val intent = packageManager.getLaunchIntentForPackage(pkg)
-                    if (intent != null) {
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(intent)
-                        return
+            fun hideSystemUI() {
+                window.decorView.systemUiVisibility = (
+                    View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_FULLSCREEN
+                )
+            }
+
+            fun showSystemUI() {
+                window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+            }
+
+            override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+                super.onActivityResult(requestCode, resultCode, data)
+                if (requestCode == REQUEST_FILE_CHOOSER) {
+                    val uri = if (resultCode == Activity.RESULT_OK && data != null) data.data else null
+                    if (uri != null) {
+                        processVideoFile(uri)
+                        filePathCallback?.onReceiveValue(arrayOf(uri))
+                    } else {
+                        filePathCallback?.onReceiveValue(null)
+                    }
+                    filePathCallback = null
+                }
+            }
+
+            inner class WebAppInterface(private val activity: MainActivity) {
+                @JavascriptInterface
+                fun openTikTok() {
+                    activity.runOnUiThread {
+                        val launched = VanaEngine.get(activity).launchTikTok()
+                        if (!launched) {
+                            Toast.makeText(activity, "Aplikasi TikTok tidak ditemukan", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
-                Toast.makeText(this, "Aplikasi TikTok tidak terpasang di HP ini", Toast.LENGTH_SHORT).show()
+
+                @JavascriptInterface
+                fun shareVideo() {
+                    openTikTok()
+                }
+
+                @JavascriptInterface
+                fun enterFullscreen() {
+                    activity.runOnUiThread { activity.hideSystemUI() }
+                }
+
+                @JavascriptInterface
+                fun exitFullscreen() {
+                    activity.runOnUiThread { activity.showSystemUI() }
+                }
             }
         }
         EOF
 
-        # 6. Gradle Files & Dependensi
+        # 7. Konfigurasi Gradle
         cat << 'EOF' > settings.gradle
         pluginManagement {
             repositories {
@@ -253,7 +341,7 @@ jobs:
                 mavenCentral()
             }
         }
-        rootProject.name = "StreamStudio"
+        rootProject.name = "StreamStudioVana"
         include ':app'
         EOF
 
@@ -290,8 +378,8 @@ jobs:
                 applicationId "com.stream.studio"
                 minSdk 24
                 targetSdk 34
-                versionCode 12
-                versionName "2.0.0"
+                versionCode 15
+                versionName "2.1.0"
             }
 
             buildTypes {
@@ -311,7 +399,6 @@ jobs:
         dependencies {
             implementation 'androidx.core:core-ktx:1.12.0'
             implementation 'androidx.appcompat:appcompat:1.6.1'
-            implementation 'com.google.android.material:material:1.11.0'
         }
         EOF
 
@@ -329,6 +416,6 @@ jobs:
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
-        name: StreamStudio-Standalone-1APK
+        name: StreamStudio-VanaPro-Hybrid
         path: "app/build/outputs/apk/debug/*.apk"
         
